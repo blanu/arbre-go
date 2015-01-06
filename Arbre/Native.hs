@@ -2,16 +2,9 @@
 
 module Arbre.Native
 (
-  builtins,
-  wrapNatives,
   numdef,
   booldef,
   stringdef,
-  builtinContext,
-  builtinEnvironment,
-  objectContext,
-  nativeName,
-  nativeType,
   Boxable,
   boxString,
   unboxString,
@@ -31,76 +24,34 @@ import Arbre.Expressions
 import Arbre.Box
 import Arbre.Context
 import Arbre.View
-import Arbre.NativeTypes
 
-type Native = ([Expression] -> Expression)
+type Native = ([Value] -> Expression)
 
-builtinContext :: Context
-builtinContext = Context builtinEnvironment empty empty empty empty
-
-builtinEnvironment :: Mapping
-builtinEnvironment = Mapping $ wrapNatives builtins
-
-objectContext :: Object -> Context
-objectContext (Module modul) = Context builtinEnvironment empty (defContext modul) empty empty
-
-defContext :: ObjectDef -> Mapping
-defContext (ObjectDef defs) = fromList $ map unwrapDef defs
-
-fromList :: [(String,Expression)] -> Mapping
+fromList :: [(String,Value)] -> Mapping
 fromList list = Mapping $ M.fromList list
 
-applyNative :: NativeType -> Native
-applyNative IntegerAdd = add
-applyNative IntegerSubtract = arbre_subtract
-applyNative IntegerMultiply = mult
-applyNative IntegerDivide = divide
-applyNative IntegerEquals = eq
-applyNative IntegerGreaterThan = gt
-applyNative IntegerLessThan = lt
-applyNative FloatAdd = float_add
-applyNative FloatSubtract = float_subtract
-applyNative FloatMultiply = float_mult
-applyNative FloatDivide = float_divide
-applyNative FloatEquals = float_eq
-applyNative FloatGreaterThan = float_gt
+applyNative :: String -> Native
+applyNative "+" = add
+applyNative "-" = arbre_subtract
+applyNative "*" = mult
+applyNative "/" = divide
+applyNative "==" = eq
+applyNative ">" = gt
+applyNative "<" = lt
+applyNative "+f" = float_add
+applyNative "-f" = float_subtract
+applyNative "*f" = float_mult
+applyNative "/f" = float_divide
+applyNative "==f" = float_eq
+applyNative ">f" = float_gt
 --applyNative FloatLessThan = float_lt
-applyNative StringEquals = string_eq
-applyNative Append = string_append
+applyNative "==s" = string_eq
+applyNative "append" = string_append
 --applyNative BooleanEquals = boolean_eq
-applyNative If = arbre_if
-applyNative And = arbre_and
-applyNative Or = arbre_or
-applyNative Not = arbre_not
-
-builtins :: (Bimap String NativeType)
-builtins = Bi.fromList [
-    ("+", IntegerAdd),
-    ("-", IntegerSubtract),
-    ("*", IntegerMultiply),
-    ("/", IntegerDivide),
-    ("==", IntegerEquals),
-    ("if", If),
-    (">", IntegerGreaterThan),
-    ("<", IntegerLessThan),
-    ("and", And),
-    ("or", Or),
-    ("not", Not),
-    ("+f", FloatAdd),
-    ("-f", FloatSubtract),
-    ("*f", FloatMultiply),
-    ("/f", FloatDivide),
-    ("==f", FloatEquals),
-    (">f", FloatGreaterThan),
-    ("append", Append),
-    ("==s", StringEquals)
-  ]
-
-nativeType :: String -> NativeType
-nativeType t = builtins ! t
-
-nativeName :: NativeType -> String
-nativeName name = builtins !> name
+applyNative "if" = arbre_if
+applyNative "and" = arbre_and
+applyNative "or" = arbre_or
+applyNative "not" = arbre_not
 
 builtinParams :: (M.Map String [String])
 builtinParams = M.fromList [
@@ -122,28 +73,15 @@ builtinParams = M.fromList [
     ("==f", ["a", "b"]),
     (">f", ["a", "b"]),
     ("append", ["a", "b"]),
-    ("==s", ["a", "b"])
+    ("==s", ["a", "b"]),
+    ("emit", ["type", "value"]),
+    ("emitThen", ["type", "value", "next"]),
+    ("mutate", ["type", "selector", "value"]),
+    ("receive", ["type", "block"])
   ]
 
-functionToMethod :: String -> Def
-functionToMethod name = do
-  let maybeOp = Bi.lookup name builtins
-  case maybeOp of
-    Just op -> Def name (BlockExp $ Block ["x"] (NativeCall op [(Symref Value ""), (Symref Local "x")]))
-
 functionsToObject :: [String] -> ObjectDef
-functionsToObject ops = ObjectDef $ map functionToMethod ops
-
-wrapNatives :: (Bimap String NativeType) -> (M.Map String Expression)
-wrapNatives natives = M.mapWithKey wrapNative (Bi.toMap natives)
-
-wrapNative :: String -> NativeType -> Expression
-wrapNative name native = do
-  let key = nativeType name
-  let maybeParams = M.lookup name builtinParams
-  case maybeParams of
-    Just params -> BlockExp $ Block params $ NativeCall key $ map (Symref Local) params
-    Nothing     -> Error $ "No params for " ++ name
+functionsToObject methods = ObjectDef []
 
 numdef :: ObjectDef
 numdef = functionsToObject ["+", "*", "==", ">"]
@@ -164,7 +102,7 @@ add params@(a:b:[]) = do
     case (x,y) of
         (Nothing,_) -> integerError params
         (_,Nothing) -> integerError params
-        (Just i, Just j) -> box (i+j)
+        (Just i, Just j) -> Return $ box (i+j)
 add params = integerError params
 
 arbre_subtract :: Native
@@ -174,7 +112,7 @@ arbre_subtract params@(a:b:[]) = do
     case (x,y) of
         (Nothing,_) -> integerError params
         (_,Nothing) -> integerError params
-        (Just i, Just j) -> box (i-j)
+        (Just i, Just j) -> Return $ box (i-j)
 arbre_subtract params = integerError params
 
 mult :: Native
@@ -184,7 +122,7 @@ mult params@(a:b:[]) = do
     case (x,y) of
         (Nothing,_) -> integerError params
         (_,Nothing) -> integerError params
-        (Just i, Just j) -> box (i*j)
+        (Just i, Just j) -> Return $ box (i*j)
 mult params = integerError params
 
 divide :: Native
@@ -194,7 +132,7 @@ divide params@(a:b:[]) = do
     case (x,y) of
         (Nothing,_) -> integerError params
         (_,Nothing) -> integerError params
-        (Just i, Just j) -> box (i `div` j)
+        (Just i, Just j) -> Return $ box (i `div` j)
 divide params = integerError params
 
 eq :: Native
@@ -204,7 +142,7 @@ eq params@(a:b:[]) = do
     case (x,y) of
         (Nothing,_) -> integerError params
         (_,Nothing) -> integerError params
-        (Just i, Just j) -> box (i==j)
+        (Just i, Just j) -> Return $ box (i==j)
 eq params = integerError params
 
 gt :: Native
@@ -214,7 +152,7 @@ gt params@(a:b:[]) = do
     case (x,y) of
         (Nothing,_) -> integerError params
         (_,Nothing) -> integerError params
-        (Just i, Just j) -> box (i>j)
+        (Just i, Just j) -> Return $ box (i>j)
 gt params = integerError params
 
 lt :: Native
@@ -224,7 +162,7 @@ lt params@(a:b:[]) = do
     case (x,y) of
         (Nothing,_) -> integerError params
         (_,Nothing) -> integerError params
-        (Just i, Just j) -> box (i<j)
+        (Just i, Just j) -> Return $ box (i<j)
 lt params = integerError params
 
 float_add :: Native
@@ -234,7 +172,7 @@ float_add params@(a:b:[]) = do
     case (x,y) of
         (Nothing,_) -> floatError params
         (_,Nothing) -> floatError params
-        (Just i, Just j) -> box (i+j)
+        (Just i, Just j) -> Return $ box (i+j)
 float_add params = floatError params
 
 float_subtract :: Native
@@ -244,7 +182,7 @@ float_subtract params@(a:b:[]) = do
     case (x,y) of
         (Nothing,_) -> floatError params
         (_,Nothing) -> floatError params
-        (Just i, Just j) -> box (i-j)
+        (Just i, Just j) -> Return $ box (i-j)
 float_subtract params = floatError params
 
 float_mult :: Native
@@ -254,7 +192,7 @@ float_mult params@(a:b:[]) = do
     case (x,y) of
         (Nothing,_) -> floatError params
         (_,Nothing) -> floatError params
-        (Just i, Just j) -> box (i*j)
+        (Just i, Just j) -> Return $ box (i*j)
 float_mult params = floatError params
 
 float_divide :: Native
@@ -264,7 +202,7 @@ float_divide params@(a:b:[]) = do
     case (x,y) of
         (Nothing,_) -> floatError params
         (_,Nothing) -> floatError params
-        (Just i, Just j) -> box (i / j)
+        (Just i, Just j) -> Return $ box (i / j)
 float_divide params = floatError params
 
 float_eq :: Native
@@ -274,7 +212,7 @@ float_eq params@(a:b:[]) = do
     case (x,y) of
         (Nothing,_) -> floatError params
         (_,Nothing) -> floatError params
-        (Just i, Just j) -> box (i==j)
+        (Just i, Just j) -> Return $ box (i==j)
 float_eq params = floatError params
 
 float_gt :: Native
@@ -284,16 +222,16 @@ float_gt params@(a:b:[]) = do
     case (x,y) of
         (Nothing,_) -> floatError params
         (_,Nothing) -> floatError params
-        (Just i, Just j) -> box (i>j)
+        (Just i, Just j) -> Return $ box (i>j)
 float_gt params = floatError params
 
 arbre_if :: Native
-arbre_if params@(c:t@(Closure _ _ _ _ _):e@(Closure _ _ _ _ _):[]) = do
+arbre_if params@(c:(ClosureValue t):(ClosureValue e):[]) = do
     let cond = unbox c :: Maybe Bool
     case cond of
         Nothing -> booleanError params
-        Just True  -> Apply t []
-        Just False -> Apply e []
+        Just True  -> Eval t []
+        Just False -> Eval e []
 arbre_if params = typeError params -- FIXME
 
 arbre_and :: Native
@@ -303,7 +241,7 @@ arbre_and params@(a:b:[]) = do
     case (a',b') of
         (Nothing, _)     -> booleanError params
         (_, Nothing)     -> booleanError params
-        (Just i, Just j) -> box (i && j)
+        (Just i, Just j) -> Return $ box (i && j)
 arbre_and params = typeError params -- FIXME
 
 arbre_or :: Native
@@ -313,7 +251,7 @@ arbre_or params@(a:b:[]) = do
     case (a',b') of
         (Nothing, _)     -> booleanError params
         (_, Nothing)     -> booleanError params
-        (Just i, Just j) -> box (i || j)
+        (Just i, Just j) -> Return $ box (i || j)
 arbre_or params = typeError params -- FIXME
 
 arbre_not :: Native
@@ -321,7 +259,7 @@ arbre_not params@(a:[]) = do
     let a' = unbox a :: Maybe Bool
     case a' of
         Nothing -> booleanError params
-        Just i  -> box (not i)
+        Just i  -> Return $ box (not i)
 arbre_not params = typeError params -- FIXME
 
 string_append :: Native
@@ -331,7 +269,7 @@ string_append params@(a:b:[]) = do
     case (a',b') of
         (Nothing, _)     -> stringError params
         (_, Nothing)     -> stringError params
-        (Just i, Just j) -> box (i ++ j)
+        (Just i, Just j) -> Return $ box (i ++ j)
 string_append params = typeError params -- FIXME
 
 string_eq :: Native
@@ -341,62 +279,62 @@ string_eq params@(a:b:[]) = do
     case (x,y) of
         (Nothing,_) -> stringError params
         (_,Nothing) -> stringError params
-        (Just i, Just j) -> box (i==j)
+        (Just i, Just j) -> Return $ box (i==j)
 string_eq params = stringError params
 
 class Boxable a where
-  box :: a -> Expression
-  unbox :: Expression -> Maybe a
+  box :: a -> Value
+  unbox :: Value -> Maybe a
 
 instance Boxable String where
-  box a = ObjectExp $ Object (LiteralState $ StringLit a) stringdef
+  box a = ObjectValue $ Object (LiteralState $ StringLit a) stringdef
   unbox exp =
     case exp of
-      (ObjectExp (Object (LiteralState (StringLit a)) _)) -> Just a
+      (ObjectValue (Object (LiteralState (StringLit a)) _)) -> Just a
       otherwise -> Nothing
 
 instance Boxable Integer where
-  box a = ObjectExp $ Object (LiteralState $ IntegerLit a) numdef
+  box a = ObjectValue $ Object (LiteralState $ IntegerLit a) numdef
   unbox exp =
     case exp of
-      (ObjectExp (Object (LiteralState (IntegerLit a)) _)) -> Just a
+      (ObjectValue (Object (LiteralState (IntegerLit a)) _)) -> Just a
       otherwise -> Nothing
 
 instance Boxable Bool where
-  box a = ObjectExp $ Object (LiteralState $ BooleanLit a) booldef
+  box a = ObjectValue $ Object (LiteralState $ BooleanLit a) booldef
   unbox exp =
     case exp of
-      (ObjectExp (Object (LiteralState (BooleanLit a)) _)) -> Just a
+      (ObjectValue (Object (LiteralState (BooleanLit a)) _)) -> Just a
       otherwise -> Nothing
 
 instance Boxable Float where
-  box a = ObjectExp $ Object (LiteralState $ FloatLit a) floatdef
+  box a = ObjectValue $ Object (LiteralState $ FloatLit a) floatdef
   unbox exp =
     case exp of
-      (ObjectExp (Object (LiteralState (FloatLit a)) _)) -> Just a
+      (ObjectValue (Object (LiteralState (FloatLit a)) _)) -> Just a
       otherwise -> Nothing
 
-boxString :: String -> Expression
+boxString :: String -> Value
 boxString s = box s
 
-unboxString :: Expression -> Maybe String
+unboxString :: Value -> Maybe String
 unboxString exp = unbox exp :: Maybe String
 
-integerError :: [Expression] -> Expression
-integerError params = Error $ "Type error, not integer literals" ++ (show params)
+integerError :: [Value] -> Expression
+integerError params = fl $ "Type error, not integer literals" ++ (show params)
 
-floatError :: [Expression] -> Expression
-floatError params = Error $ "Type error, not float literals" ++ (show params)
+floatError :: [Value] -> Expression
+floatError params = fl $ "Type error, not float literals" ++ (show params)
 
-unboxFloat :: Expression -> Maybe Float
-unboxFloat (ObjectExp (Object (LiteralState (FloatLit i)) _)) = Just i
+unboxFloat :: Value -> Maybe Float
+unboxFloat (ObjectValue (Object (LiteralState (FloatLit i)) _)) = Just i
 unboxFloat _ = Nothing
 
-booleanError :: [Expression] -> Expression
-booleanError params = Error $ "Type error, not boolean literals" ++ (show params)
+booleanError :: [Value] -> Expression
+booleanError params = fl $ "Type error, not boolean literals" ++ (show params)
 
-stringError :: [Expression] -> Expression
-stringError params = Error $ "Type error, not string literals" ++ (show params)
+stringError :: [Value] -> Expression
+stringError params = fl $ "Type error, not string literals" ++ (show params)
 
-typeError :: [Expression] -> Expression
-typeError params = Error $ "General type error: " ++ (show params)
+typeError :: [Value] -> Expression
+typeError params = fl $ "General type error: " ++ (show params)

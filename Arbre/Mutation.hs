@@ -7,8 +7,12 @@ where
 import Arbre.Context
 import Arbre.Expressions
 
-applyMutation :: Expression -> Context -> Context
-applyMutation (Mutation Define (Symdef sym) value) context =
-  bindPair Dyn context (sym, value)
-applyMutation (Mutation Set (Symdef sym) value) context =
-  bindPair Dyn context (sym, value)
+applyMutation :: Effect -> Closure
+applyMutation (Mutation Define (Symbol Dyn sym) value closure@(Closure env block)) = do
+  let context = open closure
+  let context' = bindPair Dyn context (sym, value)
+  close context' block
+applyMutation (Mutation Set (Symbol Dyn sym) value closure@(Closure env block)) = do
+  let context = open closure
+  let context' = bindPair Dyn context (sym, value)
+  close context' block
