@@ -1,0 +1,13 @@
+Name:                Arbre-Go
+Version:             1.0
+Description:         Arbre is a programming language. This compiler takes Arbre and generates Go.
+License:             GPL
+License-file:        LICENSE
+Author:              Brandon Wiley
+Maintainer:          brandon@blanu.net
+Build-Type:          Simple
+Cabal-Version:       >=1.8
+
+Executable compile
+  Main-is:           bin/compile-oo.hs
+  Build-Depends:     base >= 3 && < 5, cereal, ghc-prim, binary, containers, json, filepath, bimap, lens, directory
